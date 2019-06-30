@@ -76,7 +76,7 @@ void impersonate_system()
 	const auto system_pid = get_process_id_by_name("winlogon.exe");
 	HANDLE process_handle;
 	if ((process_handle = OpenProcess(
-		PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION,
+		PROCESS_QUERY_LIMITED_INFORMATION,
 		FALSE,
 		system_pid)) == nullptr)
 	{
@@ -86,7 +86,7 @@ void impersonate_system()
 	HANDLE token_handle;
 	if (!OpenProcessToken(
 		process_handle,
-		MAXIMUM_ALLOWED,
+		TOKEN_DUPLICATE,
 		&token_handle))
 	{
 		CloseHandle(process_handle);
@@ -101,7 +101,7 @@ void impersonate_system()
 	token_attributes.bInheritHandle = FALSE;
 	if (!DuplicateTokenEx(
 		token_handle,
-		MAXIMUM_ALLOWED,
+		TOKEN_ALL_ACCESS,
 		&token_attributes,
 		SecurityImpersonation,
 		TokenImpersonation,
@@ -126,7 +126,7 @@ int start_trusted_installer_service()
 	if ((sc_manager_handle = OpenSCManager(
 		nullptr,
 		SERVICES_ACTIVE_DATABASE,
-		GENERIC_EXECUTE)) == nullptr)
+		SC_MANAGER_CONNECT)) == nullptr)
 	{
 		throw runtime_error("OpenSCManager failed: " + to_string(GetLastError()));
 	}
@@ -135,7 +135,7 @@ int start_trusted_installer_service()
 	if ((service_handle = OpenServiceW(
 		sc_manager_handle,
 		L"TrustedInstaller",
-		GENERIC_READ | GENERIC_EXECUTE)) == nullptr)
+		SERVICE_QUERY_STATUS | SERVICE_START)) == nullptr)
 	{
 		CloseServiceHandle(sc_manager_handle);
 		throw runtime_error("OpenService failed: " + to_string(GetLastError()));
@@ -183,7 +183,7 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 
 	HANDLE process_handle;
 	if ((process_handle = OpenProcess(
-		PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION,
+		PROCESS_QUERY_LIMITED_INFORMATION,
 		FALSE,
 		pid)) == nullptr)
 	{
@@ -193,7 +193,7 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 	HANDLE token_handle;
 	if (!OpenProcessToken(
 		process_handle,
-		MAXIMUM_ALLOWED,
+		TOKEN_DUPLICATE,
 		&token_handle))
 	{
 		CloseHandle(process_handle);
@@ -208,7 +208,7 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 	token_attributes.bInheritHandle = FALSE;
 	if (!DuplicateTokenEx(
 		token_handle,
-		MAXIMUM_ALLOWED,
+		TOKEN_ALL_ACCESS,
 		&token_attributes,
 		SecurityImpersonation,
 		TokenImpersonation,
