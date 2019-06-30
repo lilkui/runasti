@@ -42,8 +42,8 @@ DWORD get_process_id_by_name(const string process_name)
 
 	DWORD pid = -1;
 	PROCESSENTRY32 pe;
-	ZeroMemory(&pe, sizeof(PROCESSENTRY32W));
-	pe.dwSize = sizeof(PROCESSENTRY32W);
+	ZeroMemory(&pe, sizeof(PROCESSENTRY32));
+	pe.dwSize = sizeof(PROCESSENTRY32);
 	if (Process32First(snapshot_handle, &pe))
 	{
 		while (Process32Next(snapshot_handle, &pe))
