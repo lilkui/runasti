@@ -220,8 +220,7 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 	CloseHandle(token_handle);
 
 	STARTUPINFOW startup_info;
-	ZeroMemory(&startup_info, sizeof(STARTUPINFOW));
-	startup_info.lpDesktop = L"Winsta0\\Default";
+	GetStartupInfoW(&startup_info);
 	PROCESS_INFORMATION process_info;
 	ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
 	if (!CreateProcessWithTokenW(
