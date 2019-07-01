@@ -42,8 +42,8 @@ DWORD get_process_id_by_name(const string process_name)
 
 	DWORD pid = -1;
 	PROCESSENTRY32 pe;
-	ZeroMemory(&pe, sizeof(PROCESSENTRY32W));
-	pe.dwSize = sizeof(PROCESSENTRY32W);
+	ZeroMemory(&pe, sizeof(PROCESSENTRY32));
+	pe.dwSize = sizeof(PROCESSENTRY32);
 	if (Process32First(snapshot_handle, &pe))
 	{
 		while (Process32Next(snapshot_handle, &pe))
@@ -76,7 +76,7 @@ void impersonate_system()
 	const auto system_pid = get_process_id_by_name("winlogon.exe");
 	HANDLE process_handle;
 	if ((process_handle = OpenProcess(
-		PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION,
+		PROCESS_QUERY_LIMITED_INFORMATION,
 		FALSE,
 		system_pid)) == nullptr)
 	{
@@ -86,12 +86,13 @@ void impersonate_system()
 	HANDLE token_handle;
 	if (!OpenProcessToken(
 		process_handle,
-		MAXIMUM_ALLOWED,
+		TOKEN_DUPLICATE,
 		&token_handle))
 	{
 		CloseHandle(process_handle);
 		throw runtime_error("OpenProcessToken failed (winlogon.exe): " + to_string(GetLastError()));
 	}
+	CloseHandle(process_handle);
 
 	HANDLE dup_token_handle;
 	SECURITY_ATTRIBUTES token_attributes;
@@ -100,7 +101,7 @@ void impersonate_system()
 	token_attributes.bInheritHandle = FALSE;
 	if (!DuplicateTokenEx(
 		token_handle,
-		MAXIMUM_ALLOWED,
+		TOKEN_ALL_ACCESS,
 		&token_attributes,
 		SecurityImpersonation,
 		TokenImpersonation,
@@ -109,16 +110,14 @@ void impersonate_system()
 		CloseHandle(token_handle);
 		throw runtime_error("DuplicateTokenEx failed (winlogon.exe): " + to_string(GetLastError()));
 	}
+	CloseHandle(token_handle);
 
 	if (!ImpersonateLoggedOnUser(dup_token_handle))
 	{
 		CloseHandle(dup_token_handle);
-		CloseHandle(token_handle);
 		throw runtime_error("ImpersonateLoggedOnUser failed: " + to_string(GetLastError()));
 	}
-
 	CloseHandle(dup_token_handle);
-	CloseHandle(token_handle);
 }
 
 int start_trusted_installer_service()
@@ -127,7 +126,7 @@ int start_trusted_installer_service()
 	if ((sc_manager_handle = OpenSCManager(
 		nullptr,
 		SERVICES_ACTIVE_DATABASE,
-		GENERIC_EXECUTE)) == nullptr)
+		SC_MANAGER_CONNECT)) == nullptr)
 	{
 		throw runtime_error("OpenSCManager failed: " + to_string(GetLastError()));
 	}
@@ -136,11 +135,12 @@ int start_trusted_installer_service()
 	if ((service_handle = OpenServiceW(
 		sc_manager_handle,
 		L"TrustedInstaller",
-		GENERIC_READ | GENERIC_EXECUTE)) == nullptr)
+		SERVICE_QUERY_STATUS | SERVICE_START)) == nullptr)
 	{
 		CloseServiceHandle(sc_manager_handle);
 		throw runtime_error("OpenService failed: " + to_string(GetLastError()));
 	}
+	CloseServiceHandle(sc_manager_handle);
 
 	SERVICE_STATUS_PROCESS status_buffer;
 	DWORD bytes_needed;
@@ -156,7 +156,6 @@ int start_trusted_installer_service()
 			if (!StartServiceW(service_handle, 0, nullptr))
 			{
 				CloseServiceHandle(service_handle);
-				CloseServiceHandle(sc_manager_handle);
 				throw runtime_error("StartService failed: " + to_string(GetLastError()));
 			}
 		}
@@ -169,12 +168,10 @@ int start_trusted_installer_service()
 		if (status_buffer.dwCurrentState == SERVICE_RUNNING)
 		{
 			CloseServiceHandle(service_handle);
-			CloseServiceHandle(sc_manager_handle);
 			return status_buffer.dwProcessId;
 		}
 	}
 	CloseServiceHandle(service_handle);
-	CloseServiceHandle(sc_manager_handle);
 	throw runtime_error("QueryServiceStatusEx failed: " + to_string(GetLastError()));
 }
 
@@ -186,7 +183,7 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 
 	HANDLE process_handle;
 	if ((process_handle = OpenProcess(
-		PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION,
+		PROCESS_QUERY_LIMITED_INFORMATION,
 		FALSE,
 		pid)) == nullptr)
 	{
@@ -196,12 +193,13 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 	HANDLE token_handle;
 	if (!OpenProcessToken(
 		process_handle,
-		MAXIMUM_ALLOWED,
+		TOKEN_DUPLICATE,
 		&token_handle))
 	{
 		CloseHandle(process_handle);
 		throw runtime_error("OpenProcessToken failed (TrustedInstaller.exe): " + to_string(GetLastError()));
 	}
+	CloseHandle(process_handle);
 
 	HANDLE dup_token_handle;
 	SECURITY_ATTRIBUTES token_attributes;
@@ -210,7 +208,7 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 	token_attributes.bInheritHandle = FALSE;
 	if (!DuplicateTokenEx(
 		token_handle,
-		MAXIMUM_ALLOWED,
+		TOKEN_ALL_ACCESS,
 		&token_attributes,
 		SecurityImpersonation,
 		TokenImpersonation,
@@ -219,10 +217,10 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 		CloseHandle(token_handle);
 		throw runtime_error("DuplicateTokenEx failed (TrustedInstaller.exe): " + to_string(GetLastError()));
 	}
+	CloseHandle(token_handle);
 
 	STARTUPINFOW startup_info;
-	ZeroMemory(&startup_info, sizeof(STARTUPINFOW));
-	startup_info.lpDesktop = L"Winsta0\\Default";
+	GetStartupInfoW(&startup_info);
 	PROCESS_INFORMATION process_info;
 	ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
 	if (!CreateProcessWithTokenW(
@@ -236,8 +234,10 @@ void create_process_as_trusted_installer(const DWORD pid, string command_line)
 		&startup_info,
 		&process_info))
 	{
+		CloseHandle(dup_token_handle);
 		throw runtime_error("CreateProcessWithTokenW failed: " + to_string(GetLastError()));
 	}
+	CloseHandle(dup_token_handle);
 }
 
 int main(int argc, char* argv[])
